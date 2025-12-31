@@ -1,3 +1,10 @@
+"""
+Bell state preparation and measurement demonstration.
+
+This module creates a Bell state (quantum entanglement) between two qubits
+and measures the result multiple times.
+"""
+
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 

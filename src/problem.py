@@ -9,6 +9,14 @@ import numpy as np
 
 @dataclass(frozen=True)
 class City:
+    """
+    Represents a city with geographic coordinates.
+    
+    Attributes:
+        name: City name.
+        lat: Latitude in decimal degrees.
+        lon: Longitude in decimal degrees.
+    """
     name: str
     lat: float  # decimal degrees
     lon: float  # decimal degrees
@@ -16,7 +24,9 @@ class City:
 
 def australia_capitals() -> List[City]:
     """
-    City coordinates (lat, lon) in decimal degrees.
+    Return list of Australian capital cities with coordinates.
+    
+    City coordinates (lat, lon) are in decimal degrees.
 
     Sources (one per city cluster):
     - Sydney: -33.865143, 151.209900  (latlong.net)
@@ -27,6 +37,9 @@ def australia_capitals() -> List[City]:
     - Brisbane: -27.470125, 153.021072 (latlong.net)
     - Hobart: -42.880554, 147.324997 (latlong.net)
     - Darwin: -12.462827, 130.841782 (latlong.net)
+    
+    Returns:
+        List of City objects representing Australian capital cities.
     """
     return [
         City("Sydney",    -33.865143, 151.209900),
@@ -41,7 +54,18 @@ def australia_capitals() -> List[City]:
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Great-circle distance between two points on Earth in kilometers."""
+    """
+    Compute great-circle distance between two points on Earth.
+    
+    Args:
+        lat1: Latitude of first point in decimal degrees.
+        lon1: Longitude of first point in decimal degrees.
+        lat2: Latitude of second point in decimal degrees.
+        lon2: Longitude of second point in decimal degrees.
+    
+    Returns:
+        Great-circle distance in kilometers.
+    """
     R = 6371.0088  # mean Earth radius in km
     phi1, lam1, phi2, lam2 = map(radians, [lat1, lon1, lat2, lon2])
     dphi = phi2 - phi1
@@ -53,9 +77,16 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def distance_matrix(cities: List[City]) -> np.ndarray:
     """
-    NxN symmetric distance matrix (km) with zeros on diagonal.
+    Compute NxN symmetric distance matrix from city coordinates.
     
     Units: kilometers (great-circle distances via haversine formula).
+    Matrix has zeros on diagonal and is symmetric.
+    
+    Args:
+        cities: List of City objects with geographic coordinates.
+    
+    Returns:
+        NxN symmetric distance matrix (np.ndarray) with zeros on diagonal.
     """
     n = len(cities)
     D = np.zeros((n, n), dtype=float)
@@ -69,14 +100,18 @@ def distance_matrix(cities: List[City]) -> np.ndarray:
 
 def validate_distance_matrix(D: np.ndarray) -> dict:
     """
-    Validate distance matrix properties:
-    - Diagonal is zero
-    - Matrix is symmetric
+    Validate distance matrix properties.
+    
+    Checks that diagonal is zero and matrix is symmetric.
+    
+    Args:
+        D: Distance matrix to validate.
     
     Returns:
-        dict with validation flags: {"symmetric": bool, "diag_zero": bool}
+        Dictionary with validation flags: {"symmetric": bool, "diag_zero": bool}
     
-    Raises ValueError if validation fails.
+    Raises:
+        ValueError: If validation fails (matrix not symmetric or diagonal not zero).
     """
     symmetric = bool(np.allclose(D, D.T, atol=1e-9))
     diag_zero = bool(np.allclose(np.diag(D), 0.0, atol=1e-12))
@@ -91,7 +126,17 @@ def validate_distance_matrix(D: np.ndarray) -> dict:
 
 def tour_length_km(tour: List[int], D: np.ndarray) -> float:
     """
-    Tour is a permutation of city indices. Returns closed-tour length (returns to start).
+    Compute closed tour length from distance matrix.
+    
+    Tour is a permutation of city indices. Returns total length including
+    return to the starting city.
+    
+    Args:
+        tour: List of city indices forming a tour (permutation of [0..n-1]).
+        D: Distance matrix (NxN) in kilometers.
+    
+    Returns:
+        Total closed tour length in kilometers (includes return to start city).
     """
     total = 0.0
     n = len(tour)

@@ -3,7 +3,14 @@ import json
 import pandas as pd
 from pathlib import Path
 
-def save_results(row: dict, outdir: str = "results"):
+def save_results(row: dict, outdir: str = "results") -> None:
+    """
+    Save results to both JSON and CSV formats.
+
+    Args:
+        row: Dictionary containing result data to save.
+        outdir: Output directory path (default: "results").
+    """
     Path(outdir).mkdir(parents=True, exist_ok=True)
     # json
     with open(Path(outdir) / "results.json", "w") as f:
