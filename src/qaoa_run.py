@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 
 import numpy as np
@@ -42,6 +42,8 @@ class TspQaoaResult:
         status: Optimization status string.
         tour: Decoded tour as list of city indices, or None if infeasible.
         tour_length_km: Total tour length in kilometers, or None if tour is infeasible.
+        per_param_stats: Optional list of dicts with per-parameter-set statistics.
+                        Each dict has keys: 'param_set', 'best_length', 'valid_count', 'running_best'.
     """
     bitstring: str
     x: List[int]
@@ -49,6 +51,7 @@ class TspQaoaResult:
     status: str
     tour: Optional[List[int]]
     tour_length_km: Optional[float]
+    per_param_stats: Optional[List[Dict]] = None
 
 
 def _build_complete_graph_from_distance_matrix(
@@ -84,7 +87,7 @@ def build_tsp_qp_fixed_start(D: np.ndarray, start: int = 0) -> tuple[QuadraticPr
     
     Returns:
         Tuple of (qp, rem_cities, rem_positions) where:
-        - qp: QuadraticProgram with 49 variables (7×7) for 8 cities with fixed start
+        - qp: QuadraticProgram with (n-1)×(n-1) variables for n cities with fixed start
         - rem_cities: List of city indices excluding start
         - rem_positions: List of position indices (1..n-1)
     """
@@ -320,6 +323,7 @@ def solve_tsp_classical_random(
             status="NO_VALID_SOLUTION",
             tour=None,
             tour_length_km=None,
+            per_param_stats=None,
         )
     
     print(f"Best tour found: length = {best_length:.1f} km")
@@ -330,15 +334,16 @@ def solve_tsp_classical_random(
         status="SUCCESS",
         tour=best_tour,
         tour_length_km=best_length,
+        per_param_stats=None,
     )
 
 
 def solve_tsp_qaoa_sampling(
     D: np.ndarray,
     reps: int = 1,
-    shots: int = 2048,
+    shots: int = 512,
     seed: int = 7,
-    num_param_sets: int = 5,
+    num_param_sets: int = 30,
     city_names: Optional[List[str]] = None,
 ) -> TspQaoaResult:
     """
@@ -353,9 +358,9 @@ def solve_tsp_qaoa_sampling(
     Args:
         D: Symmetric distance matrix (NxN) with zeros on diagonal, units in kilometers.
         reps: Number of QAOA layers (default: 1).
-        shots: Number of measurement shots per parameter set (default: 2048).
+        shots: Number of measurement shots per parameter set (default: 512).
         seed: Random seed for reproducibility (default: 7).
-        num_param_sets: Number of random parameter sets to try (default: 5).
+        num_param_sets: Number of random parameter sets to try (default: 30).
         city_names: Optional list of city names for graph construction.
 
     Returns:
@@ -364,7 +369,7 @@ def solve_tsp_qaoa_sampling(
     n = D.shape[0]
     print(f"Building TSP problem for {n} cities with fixed start (reduced to {(n-1)*(n-1)} qubits)...")
     
-    # Build reduced 49-variable QP
+    # Build reduced (n-1)×(n-1) variable QP
     qp, rem_cities, rem_positions = build_tsp_qp_fixed_start(D, start=0)
     print(f"Quadratic program created with {qp.get_num_vars()} variables")
     
@@ -401,20 +406,32 @@ def solve_tsp_qaoa_sampling(
     # Transpiler for gate decomposition
     transpiler = AerTranspiler()
     
-    # Try a few random parameter sets and sample
-    print(f"Sampling {num_param_sets} parameter sets...")
+    # Try multiple parameter sets with biased ranges
+    # For reps=1: params = [gamma, beta]
+    # Typical good ranges: gamma ∈ [0, π], beta ∈ [0, π/2]
+    print(f"Sampling {num_param_sets} parameter sets (gamma ∈ [0, π], beta ∈ [0, π/2])...")
     sys.stdout.flush()
     best_tour = None
     best_length = float("inf")
     best_bitstring = None
     best_x = None
+    valid_tours_found = 0
+    
+    # Track per-parameter-set statistics
+    per_param_stats = []
     
     num_qubits = qp.get_num_vars()
     rng = np.random.RandomState(seed)
     
     for param_idx in range(num_param_sets):
-        # Random parameters (QAOA typically uses 2*reps parameters)
-        params = rng.uniform(-np.pi, np.pi, size=2 * reps)
+        # Sample parameters with biased ranges
+        # For reps=1: [gamma, beta] where gamma ∈ [0, π], beta ∈ [0, π/2]
+        params = np.zeros(2 * reps)
+        for i in range(reps):
+            # gamma (even indices): [0, π]
+            params[2 * i] = rng.uniform(0.0, np.pi)
+            # beta (odd indices): [0, π/2]
+            params[2 * i + 1] = rng.uniform(0.0, np.pi / 2)
         
         print(f"  Parameter set {param_idx + 1}/{num_param_sets}: building circuit...")
         sys.stdout.flush()
@@ -447,10 +464,10 @@ def solve_tsp_qaoa_sampling(
         sys.stdout.flush()
         
         # Try each sampled bitstring
+        param_valid_count = 0
         for bitstring, count in counts.items():
             # Convert bitstring to binary list
             # Qiskit bitstrings are in measurement order (q0, q1, ..., qn-1)
-            # For 49 qubits, we need exactly 49 bits
             if len(bitstring) != num_qubits:
                 continue
             x_list = [int(b) for b in bitstring]
@@ -458,16 +475,29 @@ def solve_tsp_qaoa_sampling(
             # Decode to tour
             tour = decode_fixed_start_solution(x_list, n=n, start=0)
             if tour is not None:
+                param_valid_count += 1
+                valid_tours_found += 1
                 length = _tour_length_km_from_matrix(tour, D)
                 if length < best_length:
                     best_length = length
                     best_tour = tour
                     best_bitstring = bitstring
                     best_x = x_list
-                    print(f"    Found valid tour: length = {length:.1f} km")
+                    print(f"    Found valid tour: length = {length:.1f} km (new best)")
+        
+        if param_valid_count > 0:
+            print(f"    Parameter set {param_idx + 1}: {param_valid_count} valid tours found")
+        
+        # Record statistics for this parameter set
+        per_param_stats.append({
+            'param_set': param_idx + 1,
+            'best_length': best_length if best_tour is not None else None,
+            'valid_count': param_valid_count,
+            'running_best': best_length if best_tour is not None else float('inf'),
+        })
     
     if best_tour is None:
-        print("  No valid tours found in samples")
+        print(f"\nNo valid tours found in {num_param_sets} parameter sets")
         return TspQaoaResult(
             bitstring="",
             x=[],
@@ -475,9 +505,11 @@ def solve_tsp_qaoa_sampling(
             status="NO_VALID_SOLUTION",
             tour=None,
             tour_length_km=None,
+            per_param_stats=per_param_stats,
         )
     
-    print(f"Best tour found: length = {best_length:.1f} km")
+    print(f"\nBest tour found: length = {best_length:.1f} km")
+    print(f"Total valid tours found: {valid_tours_found} across {num_param_sets} parameter sets")
     return TspQaoaResult(
         bitstring=best_bitstring or "",
         x=best_x or [],
@@ -485,6 +517,7 @@ def solve_tsp_qaoa_sampling(
         status="SUCCESS",
         tour=best_tour,
         tour_length_km=best_length,
+        per_param_stats=per_param_stats,
     )
 
 
@@ -514,7 +547,7 @@ def solve_tsp_qaoa(
     n = D.shape[0]
     print(f"Building TSP problem for {n} cities with fixed start (reduced to {(n-1)*(n-1)} qubits)...")
     
-    # Build reduced 49-variable QP (7×7) instead of 64-variable (8×8)
+    # Build reduced (n-1)×(n-1) variable QP
     qp, rem_cities, rem_positions = build_tsp_qp_fixed_start(D, start=0)
     print(f"Quadratic program created with {qp.get_num_vars()} variables (should be {(n-1)*(n-1)})")
 
@@ -570,4 +603,5 @@ def solve_tsp_qaoa(
         status=str(result.status),
         tour=tour,
         tour_length_km=length,
+        per_param_stats=None,
     )

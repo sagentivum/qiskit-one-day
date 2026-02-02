@@ -124,6 +124,47 @@ def validate_distance_matrix(D: np.ndarray) -> dict:
     return {"symmetric": True, "diag_zero": True}
 
 
+def select_cities(cities: List[City], city_names: List[str]) -> Tuple[List[City], Dict[int, int]]:
+    """
+    Select a subset of cities from the full list and remap indices.
+    
+    Takes the full city list and returns a filtered list containing only
+    the specified cities, with indices remapped to a compact 0..n-1 space.
+    The start city (first in city_names) will be at index 0.
+    
+    Args:
+        cities: Full list of City objects.
+        city_names: List of city names to select (must be present in cities).
+                    First city will be at index 0 in the result.
+    
+    Returns:
+        Tuple of (selected_cities, original_to_new_index) where:
+        - selected_cities: Filtered list of City objects in the order specified
+        - original_to_new_index: Dictionary mapping original indices to new indices
+    
+    Raises:
+        ValueError: If any city name is not found in the cities list.
+    """
+    # Build name-to-city mapping
+    name_to_city = {city.name: (i, city) for i, city in enumerate(cities)}
+    
+    # Verify all requested cities exist
+    missing = [name for name in city_names if name not in name_to_city]
+    if missing:
+        raise ValueError(f"Cities not found: {missing}")
+    
+    # Build selected list in the order specified, preserving start city as index 0
+    selected_cities = []
+    original_to_new_index = {}
+    
+    for new_idx, city_name in enumerate(city_names):
+        original_idx, city = name_to_city[city_name]
+        selected_cities.append(city)
+        original_to_new_index[original_idx] = new_idx
+    
+    return selected_cities, original_to_new_index
+
+
 def tour_length_km(tour: List[int], D: np.ndarray) -> float:
     """
     Compute closed tour length from distance matrix.

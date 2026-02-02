@@ -1,0 +1,45 @@
+{
+  "problem": "TSP-AU-CAPITALS-5",
+  "cities": [
+    {
+      "name": "Sydney",
+      "lat": -33.865143,
+      "lon": 151.2099
+    },
+    {
+      "name": "Melbourne",
+      "lat": -37.840935,
+      "lon": 144.946457
+    },
+    {
+      "name": "Canberra",
+      "lat": -35.282001,
+      "lon": 149.128998
+    },
+    {
+      "name": "Brisbane",
+      "lat": -27.470125,
+      "lon": 153.021072
+    },
+    {
+      "name": "Hobart",
+      "lat": -42.880554,
+      "lon": 147.324997
+    }
+  ],
+  "distance_metric": "haversine_km",
+  "start_city_index": 0,
+  "optimal_tour_indices": [
+    0,
+    4,
+    1,
+    2,
+    3
+  ],
+  "optimal_length_km": 3798.3053233034734,
+  "search_space_size": 24,
+  "distance_matrix_checks": {
+    "symmetric": true,
+    "diag_zero": true
+  }
+}
